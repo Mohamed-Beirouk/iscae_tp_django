@@ -1,0 +1,8 @@
+
+login, register (donneur, admin)
+Gestion du profil (groupe sanguin, maladie, antécédents, âge, status, Localisation)
+Historique des dons
+Éligibilité au don
+Badges selon nombre de dons
+Classement mensuel
+Lister les centres de don
