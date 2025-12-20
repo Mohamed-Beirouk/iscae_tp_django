@@ -1,9 +1,11 @@
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from iscae_app.models import CustomUser, UserProfile
+from iscae_app.models import CustomUser, DonationHistory, UserProfile
 from django.http import JsonResponse
 import json
+
+from iscae_app.utils import get_badge_from_count, is_eligible_for_donation
 
 
 @csrf_exempt
@@ -78,3 +80,132 @@ def register_user(request):
         user.save()
         return JsonResponse({'message': 'User registered successfully'}, status=201)
     return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+
+
+#  Historique des dons avec ApiView
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated  
+
+
+
+class DonationHistoryView(APIView):
+    permission_classes = [IsAuthenticated]  
+    def get(self, request):
+        user = request.user
+        if user.is_superuser:
+            donations = DonationHistory.objects.all()
+        else:   
+            donations = DonationHistory.objects.filter(user=user)  
+
+        donation_data = [
+            {
+                'date_don': donation.date_don,
+                'lieu_don': donation.lieu_don,
+                'quantite_donnee': donation.quantite_donnee,
+            }
+            for donation in donations
+        ]
+        return Response({'donation_history': donation_data})    
+    def post(self, request):
+        user = request.user
+        data = request.data
+        date_don = data.get('date_don')
+        lieu_don = data.get('lieu_don')
+        quantite_donnee = data.get('quantite_donnee')
+
+        if not is_eligible_for_donation(user):
+            return Response({'error': 'You are not eligible to donate at this time.'}, status=400)
+
+        donation = DonationHistory.objects.create(
+            user=user,
+            date_don=date_don,
+            lieu_don=lieu_don,
+            quantite_donnee=quantite_donnee 
+        )
+        return Response({'message': 'Donation recorded successfully'}, status=201)
+    
+
+
+
+
+
+#  me api retunr infos of the connected user
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated  , AllowAny
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me(request):
+    user = request.user
+    profile = UserProfile.objects.get(user=user)
+    count = DonationHistory.objects.filter(user=user).count()
+    badge_name = get_badge_from_count(count)
+    user_data = {
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'email': user.email,
+        'username': user.username,
+        'tel': user.tel,
+        'groupe_sanguin': profile.groupe_sanguin,
+        'maladie': profile.maladie,
+        'antecedents': profile.antecedents,
+        'date_naissance': profile.date_naissance,
+        'location': profile.location,
+        'pret_pour_don': profile.pret_pour_don,
+        'nni': profile.nni,
+        'bio': profile.bio,
+        'donation_count': count,
+        'badge': badge_name,
+    }
+    return Response(user_data)
+
+
+
+
+
+from datetime import datetime, timedelta
+from django.db.models import Count
+from django.utils.timezone import now
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def monthly_leaderboard(request):
+    one_month_ago = now() - timedelta(days=30)
+    leaderboard = (
+        DonationHistory.objects
+        .filter(date_don__gte=one_month_ago)
+        .values('user__username')
+        .annotate(donation_count=Count('id'))
+        .order_by('-donation_count')[:10]
+    )
+
+    leaderboard_data = [
+        {
+            'username': entry['user__username'],
+            'donation_count': entry['donation_count']
+        }
+        for entry in leaderboard
+    ]
+
+    return JsonResponse({'leaderboard': leaderboard_data})
+
+
+
+
+# Lister les centres de don
+from iscae_app.models import DonationCenter
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def centres_dons(request):
+    centers = DonationCenter.objects.all()
+    centers_data = [
+        {
+            'nom': center.nom,
+            'adresse': center.adresse,
+            'telephone': center.telephone,
+            'email': center.email,
+        }
+        for center in centers
+    ]
+    return JsonResponse({'donation_centers': centers_data})

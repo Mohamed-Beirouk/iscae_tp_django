@@ -1,4 +1,3 @@
-
 login, register (donneur, admin)
 Gestion du profil (groupe sanguin, maladie, antécédents, âge, status, Localisation)
 Historique des dons
